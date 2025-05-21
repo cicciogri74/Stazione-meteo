@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stazione Meteorologica</title>
+  <meta name="description" content="Stazione meteorologica in tempo reale. Dati su temperatura, umidità, vento e altro ancora." />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(to bottom, #cce0ff, #f0f8ff);
+      padding: 40px;
+      text-align: center;
+      color: #003366;
+    }
+
+    .weather-container {
+      background-color: #ffffffee;
+      padding: 30px;
+      border-radius: 20px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+      max-width: 600px;
+      margin: auto;
+    }
+
+    h1 {
+      color: #004080;
+      margin-bottom: 20px;
+    }
+
+    .info-row {
+      margin: 8px 0;
+      font-size: 1.1rem;
+    }
+
+    .icon {
+      font-size: 22px;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+
+    #chart-container {
+      margin-top: 30px;
+    }
+
+    canvas {
+      max-width: 100%;
+    }
+
+    #error-message {
+      color: #c00;
+      font-weight: bold;
+      margin-top: 10px;
+    }
+
+    .loading-spinner {
+      margin: 20px auto;
+      border: 5px solid #e0e0e0;
+      border-top: 5px solid #004080;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .update-note {
+      margin-top: 15px;
+      font-style: italic;
+      color: #666;
+    }
+
+    button {
+      margin: 15px;
+      padding: 10px 20px;
+      font-size: 1rem;
+      background-color: #004080;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+
+    #forecast ul {
+      list-style: none;
+      padding: 0;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Stazione Meteorologica</h1>
+  <div class="weather-container" role="region" aria-live="polite" aria-label="Dati meteo attuali">
+    <div id="spinner" class="loading-spinner" role="status" aria-label="Caricamento dati meteo"></div>
+    <div id="weather" style="display: none;"></div>
+    <div id="error-message" role="alert"></div>
+    <div class="update-note">I dati si aggiornano ogni 10 minuti.</div>
+    <button onclick="manualRefresh()">Aggiorna Ora</button>
+    <div id="chart-container" aria-label="Grafico storico temperatura">
+      <canvas id="tempChart" height="150" role="img" aria-label="Grafico temperatura storica"></canvas>
+    </div>
+    <div id="forecast" aria-label="Previsioni meteo prossimi giorni"></div>
+  </div>
+
+  <noscript>
+    <p style="color: red; font-weight: bold;">Per visualizzare i dati meteo, abilita JavaScript.</p>
+  </noscript>
+
+  <script>
+    const apiKey = "fe246ce400ae43c2a46ce400ae13c256";
+    const defaultStationId = "IROME8355";
+    const tempHistory = JSON.parse(localStorage.getItem("tempHistory") || "[]");
+
+    let chart;
+    let currentLat = null;
+    let currentLon = null;
+
+    function updateChart() {
+      const labels = tempHistory.map(e =>
+        new Date(e.time).toLocaleTimeString("it-IT", {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          timeZone: "Europe/Rome"
+        })
+      );
+      const data = tempHistory.map(e => e.temp);
+
+      if (chart) chart.destroy();
+      const ctx = document.getElementById("tempChart").getContext("2d");
+
+      chart = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: labels,
+          datasets: [{
+            label: "Temperatura (°C)",
+            data: data,
+            borderColor: "#004080",
+            backgroundColor: "rgba(0, 64, 128, 0.1)",
+            fill: true,
+            tension: 0.3,
+            pointRadius: 3,
+            pointHoverRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            y: {
+              beginAtZero: false,
+              title: {
+                display: true,
+                text: "°C"
+              }
+            },
+            x: {
+              title: {
+                display: true,
+                text: "Ora"
+              }
+            }
+          },
+          plugins: {
+            legend: {
+              labels: {
+                font: {
+                  size: 14
+                }
+              }
+            },
+            tooltip: {
+              mode: 'index',
+              intersect: false
+            }
+          },
+          interaction: {
+            mode: 'nearest',
+            axis: 'x',
+            intersect: false
+          }
+        }
+      });
+    }
+
+    async function getWeatherData(lat = null, lon = null) {
+      const spinner = document.getElementById("spinner");
+      const weatherEl = document.getElementById("weather");
+      const errorEl = document.getElementById("error-message");
+
+      spinner.style.display = "block";
+      weatherEl.style.display = "none";
+      errorEl.textContent = "";
+
+      let url;
+      if (lat !== null && lon !== null) {
+        url = `https://api.weather.com/v3/wx/conditions/current?geocode=${lat},${lon}&format=json&units=m&language=it-IT&apiKey=${apiKey}`;
+      } else {
+        url = `https://api.weather.com/v2/pws/observations/current?stationId=${defaultStationId}&format=json&units=m&apiKey=${apiKey}`;
+      }
+
+      try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error("Errore HTTP: " + response.status);
+
+        const data = await response.json();
+        const obs = data.observations?.[0] ?? data;
+
+        const temp = obs?.metric?.temp ?? obs?.temperature ?? "N/A";
+        const humidity = obs?.humidity ?? "N/A";
+        const windSpeed = obs?.metric?.windSpeed ?? obs?.windSpeed ?? "N/A";
+        const pressure = obs?.metric?.pressure ?? obs?.pressureAltimeter ?? "N/A";
+        const obsTimeUtc = obs?.obsTimeUtc ?? obs?.validTimeLocal;
+        const obsTime = obsTimeUtc
+          ? new Date(obsTimeUtc).toLocaleString("it-IT", {
+              timeZone: "Europe/Rome",
+              day: "2-digit", month: "2-digit",
+              hour: "2-digit", minute: "2-digit", second: "2-digit"
+            }) + " (ora locale)"
+          : "N/A";
+
+        weatherEl.innerHTML = `
+          <div class="info-row"><span class="icon" role="img" aria-label="Temperatura">🌡️</span><strong>Temperatura:</strong> ${temp} °C</div>
+          <div class="info-row"><span class="icon" role="img" aria-label="Umidità">💧</span><strong>Umidità:</strong> ${humidity}%</div>
+          <div class="info-row"><span class="icon" role="img" aria-label="Vento">🌬️</span><strong>Vento:</strong> ${windSpeed} km/h</div>
+          <div class="info-row"><span class="icon" role="img" aria-label="Pressione">🧭</span><strong>Pressione:</strong> ${pressure} hPa</div>
+          <div class="info-row"><span class="icon" role="img" aria-label="Ultimo aggiornamento">⏰</span><strong>Ultimo aggiornamento:</strong> ${obsTime}</div>
+        `;
+
+        spinner.style.display = "none";
+        weatherEl.style.display = "block";
+
+        if (!isNaN(temp)) {
+          tempHistory.push({ time: Date.now(), temp: parseFloat(temp) });
+          if (tempHistory.length > 50) tempHistory.shift();
+          localStorage.setItem("tempHistory", JSON.stringify(tempHistory));
+        }
+
+        updateChart();
+
+      } catch (err) {
+        spinner.style.display = "none";
+        errorEl.textContent = "Errore: " + err.message;
+      }
+    }
+
+    function manualRefresh() {
+      if (currentLat !== null && currentLon !== null) {
+        getWeatherData(currentLat, currentLon);
+        getForecast(currentLat, currentLon);
+      } else {
+        getWeatherData();
+        getForecast();
+      }
+    }
+
+    async function getForecast(lat = null, lon = null) {
+      const forecastEl = document.getElementById("forecast");
+      forecastEl.innerHTML = "<p>Caricamento previsioni...</p>";
+
+      let url;
+      if (lat !== null && lon !== null) {
+        url = `https://api.weather.com/v3/wx/forecast/daily/5day?geocode=${lat},${lon}&format=json&units=m&language=it-IT&apiKey=${apiKey}`;
+      } else {
+        url = `https://api.weather.com/v3/wx/forecast/daily/5day?geocode=41.9028,12.4964&format=json&units=m&language=it-IT&apiKey=${apiKey}`;
+      }
+
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("Errore previsioni");
+
+        const forecast = await res.json();
+        let html = `<h2>Previsioni 5 Giorni</h2><ul>`;
+        for (let i = 0; i < forecast.dayOfWeek.length; i++) {
+          html += `
+            <li>
+              <strong>${forecast.dayOfWeek[i]}</strong>: 
+              ${forecast.narrative[i]} <br />
+              🌡️ ${forecast.temperatureMin[i]}°C / ${forecast.temperatureMax[i]}°C
+            </li>
+          `;
+        }
+        html += `</ul>`;
+        forecastEl.innerHTML = html;
+
+      } catch (err) {
+        forecastEl.innerHTML = "<p>Errore nel caricamento delle previsioni.</p>";
+      }
+    }
+
+    function startApp() {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          pos => {
+            currentLat = pos.coords.latitude;
+            currentLon = pos.coords.longitude;
+            getWeatherData(currentLat, currentLon);
+            getForecast(currentLat, currentLon);
+          },
+          () => {
+            getWeatherData();
+            getForecast();
+          }
+        );
+      } else {
+        getWeatherData();
+        getForecast();
+      }
+
+      setInterval(() => {
+        if (currentLat !== null && currentLon !== null) {
+          getWeatherData(currentLat, currentLon);
+          getForecast(currentLat, currentLon);
+        } else {
+          getWeatherData();
+          getForecast();
+        }
+      }, 600000); // ogni 10 minuti
+    }
+
+    startApp();
+  </script>
+</body>
+</html>
