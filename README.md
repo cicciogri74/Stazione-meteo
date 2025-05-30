@@ -1,12 +1,35 @@
+# Stazione Meteo – IROME8355
 
-# Personal Weather Station
-
-Una stazione meteo personale con dashboard web e salvataggio dati tramite UndergrounD.
+Dashboard web per visualizzare in tempo reale i dati della stazione meteo personale [IROME8355](https://www.wunderground.com/dashboard/pws/IROME8355).
 
 ## Funzionalità
 
-- Raccolta dati ambientali (temperatura, umidità, pressione, ecc.)
-- Dashboard HTML responsive per visualizzazione locale
-- Salvataggio automatico dei dati su UndergrounD
+- Dati in tempo reale (temperatura, umidità, vento)
+- Interfaccia semplice e reattiva
+- Aggiornamento automatico ogni 5 minuti
 
-## Struttura della repo
+## Tecnologie
+
+- HTML + JavaScript
+- API Weather Underground
+
+## Come usare
+
+1. Clona la repo:
+   ```bash
+   git clone https://github.com/tuo-utente/stazione-meteo.git
+   cd stazione-meteo
+   ```
+2. Apri `index.html` in un browser moderno.
+3. (Opzionale) Pubblica con GitHub Pages per vederla online.
+
+## API
+
+Usa la chiave Weather Underground:  
+`fe246ce400ae43c2a46ce400ae13c256`
+
+---
+
+## Autore
+
+Stazione ID: `IROME8355`
